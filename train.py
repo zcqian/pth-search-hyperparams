@@ -42,12 +42,12 @@ def process(data_loader: DataLoader,
         raise RuntimeError(f"Invoked with invalid mode: {mode}")
 
     with context():
-        for batch_idx, (data, target) in data_loader:
+        for data, target in data_loader:
             # move to GPU
-            input = input.cuda(non_blocking=True)
+            data = data.cuda(non_blocking=True)
             target = target.cuda(non_blocking=True)
             # compute output
-            output = model(input)
+            output = model(data)
             loss = criterion(output, target)
             # measure accuracy
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
