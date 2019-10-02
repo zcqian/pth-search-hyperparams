@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# model
+model.py
+initial_weights.pt
+
+# IDE
+.idea/
