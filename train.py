@@ -32,12 +32,12 @@ def process(data_loader: DataLoader,
 
     if mode == 'train':
         model.train()
-        context = torch.no_grad
+        context = torch.enable_grad
         if optimizer is None:
             raise RuntimeError("Invoked training without optimizer")
     elif mode == 'eval':
         model.eval()
-        context = torch.enable_grad
+        context = torch.no_grad
     else:
         raise RuntimeError(f"Invoked with invalid mode: {mode}")
 
