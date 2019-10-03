@@ -34,7 +34,7 @@ class Meter:
         self.__total = 0.
 
     def update(self, value: Number, count: int):
-        self.__total += value
+        self.__total += value * count
         self.__count += count
 
     @property
