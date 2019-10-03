@@ -72,7 +72,7 @@ if __name__ == '__main__':
     del parser, args, optimizer_name, optimizer_options, optimizer_dict
 
     # obtain best accuracy from checkpoint
-    _, best_acc1, _ = process(dl_trn, model, criterion, None, mode='eval')
+    _, best_acc1, _ = process(dl_val, model, criterion, None, mode='eval')
     print(f" *** Starting Acc@1 {best_acc1:.4f}")
 
     set_all_rng_seed(2019)
