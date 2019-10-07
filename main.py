@@ -60,7 +60,8 @@ if __name__ == '__main__':
     # setup the model and move to multiple GPUs
     model: nn.Module = produce_model()
     model.load_state_dict(torch.load(args.initial_weight))
-    model = torch.nn.DataParallel(model)
+    if args.device == 'cuda':  # this means all cuda devices
+        model = torch.nn.DataParallel(model)
     model = model.to(device)
     # optimizer and criterion
     optimizer = optimizer_dict[optimizer_name](model.parameters(), **optimizer_options)
