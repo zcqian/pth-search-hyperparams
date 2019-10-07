@@ -69,7 +69,7 @@ def process(data_loader: DataLoader,
             losses.update(loss.item(), data.size(0))
             top1.update(acc1[0], data.size(0))
             top5.update(acc5[0], data.size(0))
-            iterator.set_postfix_str(f"A@1 {acc1:6.3f} ({top1.mean:6.3f}) L {loss.item():6.4f} ({losses.mean:6.4f})")
+            iterator.set_postfix_str(f"A@1 {acc1[0]:6.3f} ({top1.mean:6.3f}) L {loss.item():6.4f} ({losses.mean:6.4f})")
     return losses.mean, top1.mean, top5.mean
 
 
