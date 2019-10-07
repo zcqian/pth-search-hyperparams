@@ -1,5 +1,6 @@
 from typing import Callable, Union
 
+from tqdm import tqdm
 import torch
 from torch import nn
 from torch.optim.optimizer import Optimizer
@@ -13,7 +14,9 @@ def process(data_loader: DataLoader,
             model: nn.Module,
             criterion: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
             optimizer: Union[Optimizer, None],
-            mode: str):
+            mode: str,
+            progress: bool,
+            device: torch.device):
     """Process one epoch of data given train/eval mode
 
     Arguments:
@@ -22,6 +25,8 @@ def process(data_loader: DataLoader,
         criterion:
         optimizer: all these are pretty much self explanatory
         mode: 'train' or 'eval'
+        progress: whether to show progress bar
+        device: device to move data to
 
     Returns:
         Tuple of three floating number, mean {loss, top-1 accuracy, top-5 accuracy} for this epoch
@@ -41,11 +46,13 @@ def process(data_loader: DataLoader,
     else:
         raise RuntimeError(f"Invoked with invalid mode: {mode}")
 
+    iterator = tqdm(data_loader, leave=False, disable=not progress, )
+
     with context():
-        for data, target in data_loader:
+        for data, target in iterator:
             # move to GPU
-            data = data.cuda(non_blocking=True)
-            target = target.cuda(non_blocking=True)
+            data = data.to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True)
             # compute output
             output = model(data)
             loss = criterion(output, target)
@@ -62,6 +69,7 @@ def process(data_loader: DataLoader,
             losses.update(loss.item(), data.size(0))
             top1.update(acc1[0], data.size(0))
             top5.update(acc5[0], data.size(0))
+            iterator.set_postfix_str(f"A@1 {acc1:6.3f} ({top1.mean:6.3f}) L {loss.item():6.4f} ({losses.mean:6.4f})")
     return losses.mean, top1.mean, top5.mean
 
 

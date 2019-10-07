@@ -41,6 +41,8 @@ if __name__ == '__main__':
                         help='number of total epochs to run')
     parser.add_argument('--initial-weight', type=str, metavar='INITIAL_CKPT',
                         help="path to initial weights")
+    parser.add_argument('-d', '--device', type=str, metavar='DEVICE', default='cuda',
+                        help="device for tensor calculation")
 
     # parse command line arguments
     args = parser.parse_args()
@@ -52,15 +54,18 @@ if __name__ == '__main__':
     optimizer_name = args.optimizer.lower()
     epochs = args.epochs
 
+    # dev
+    device = torch.device(args.device)
+
     # setup the model and move to multiple GPUs
     model: nn.Module = produce_model()
     model.load_state_dict(torch.load(args.initial_weight))
     model = torch.nn.DataParallel(model)
-    model.cuda()
+    model = model.to(device)
     # optimizer and criterion
     optimizer = optimizer_dict[optimizer_name](model.parameters(), **optimizer_options)
     criterion = nn.CrossEntropyLoss()
-    criterion = criterion.cuda()
+    criterion = criterion.to(device)
 
     # initialize data
     ds_trn, ds_val = imagenet_1k()
@@ -72,7 +77,7 @@ if __name__ == '__main__':
     del parser, args, optimizer_name, optimizer_options, optimizer_dict
 
     # obtain best accuracy from checkpoint
-    _, best_acc1, _ = process(dl_val, model, criterion, None, mode='eval')
+    _, best_acc1, _ = process(dl_val, model, criterion, None, mode='eval', device=device, progress=True)
     print(f" *** Starting Acc@1 {best_acc1:.4f}")
 
     set_all_rng_seed(2019)
