@@ -20,6 +20,8 @@ if __name__ == '__main__':
                         help="output image directory")
     parser.add_argument('-w', '--initial-weight', type=str, metavar='INITIAL_CKPT', required=True,
                         help="path to initial weights")
+    parser.add_argument('-k', '--topk', type=int, metavar='TOP_K', default=1,
+                        help="produce TOP_K number of heat-maps")
 
     args = parser.parse_args()
 
@@ -42,24 +44,27 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         output = model(tensor)
-        pred = output.argmax()
-        heatmap = feature_extractor(tensor)[0]
-        heatmap: np.ndarray = heatmap[pred].numpy()
+        _, pred_list = output.topk(args.topk, 1)
+        features = feature_extractor(tensor)[0]
 
-    heatmap = (heatmap - heatmap.min()) / heatmap.max()
     colormap: Callable = cm.hot
-    heatmap = np.uint8((colormap(heatmap) * 255).clip(0, 255))
+    pred_list = list(pred_list[0].numpy())
+    for pred in pred_list:
+        heatmap: np.ndarray = features[pred].numpy()
 
-    heatmap_img = PIL.Image.fromarray(heatmap)
-    heatmap_img = heatmap_img.resize(image.size, resample=PIL.Image.LINEAR)
-    r, g, b, _ = heatmap_img.split()
-    a = PIL.Image.new('L', heatmap_img.size, 127)
-    heatmap_img = PIL.Image.merge('RGBA', (r, g, b, a))
+        heatmap = (heatmap - heatmap.min()) / heatmap.max()
 
-    final_image = PIL.Image.alpha_composite(image.convert('RGBA'), heatmap_img)
+        heatmap = np.uint8((colormap(heatmap) * 255).clip(0, 255))
+        heatmap_img = PIL.Image.fromarray(heatmap)
+        heatmap_img = heatmap_img.resize(image.size, resample=PIL.Image.LINEAR)
+        r, g, b, _ = heatmap_img.split()
+        a = PIL.Image.new('L', heatmap_img.size, 127)
+        heatmap_img = PIL.Image.merge('RGBA', (r, g, b, a))
 
-    filename = os.path.basename(args.input)
-    filename = filename.split('.')[0]
-    filename = f"{filename}_pred{pred.item()}.png"
-    output_path = os.path.join(args.output, filename)
-    final_image.save(output_path)
+        final_image = PIL.Image.alpha_composite(image.convert('RGBA'), heatmap_img)
+
+        filename = os.path.basename(args.input)
+        filename = filename.split('.')[0]
+        filename = f"{filename}_pred_{pred.item()}.png"
+        output_path = os.path.join(args.output, filename)
+        final_image.save(output_path)
