@@ -1,8 +1,9 @@
 import argparse
 import os
-from typing import Callable
+from typing import Callable, List, Tuple
 
 import PIL.Image
+import PIL.ImageDraw2
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -11,6 +12,71 @@ import torchvision.transforms as transforms
 from torchvision.models import MobileNetV2
 
 from model import produce_model
+
+
+model = None
+metadata = None
+
+
+def setup_model(initial_weight: str) -> None:
+    global model
+    if model is None:
+        model = produce_model()
+        model.load_state_dict(torch.load(initial_weight))
+        model.eval()
+        model = model.features
+    return
+
+
+def classify_image(img: PIL.Image.Image,
+                   topk: int = 1,
+                   feature_threshold: float = 0.33) -> Tuple[List[Tuple[int, float]], List[np.ndarray], np.ndarray]:
+    global model
+    transform_tensor = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    x: torch.Tensor = transform_tensor(img)
+    x = x.unsqueeze(0)
+    with torch.no_grad():
+        features = model(x)[0]
+        output = F.adaptive_avg_pool2d(features, (1, 1)).view(-1)
+        act = F.softmax(output, dim=0)
+        _, pred_list = output.topk(topk)
+        softmax_map, object_map = F.softmax(features, dim=0).max(dim=0)
+
+    # prepare image classification results and respective activation map
+    pred_list = list(pred_list.numpy())
+    r = []
+    activation_maps = []
+    for pred in pred_list:
+        r.append((pred, act[pred].item()))
+        activation_maps.append(features[pred].numpy())
+
+    # prepare object detection
+    threshold_map = softmax_map < 0.33
+    object_map[threshold_map] = -1
+    object_map = object_map.numpy()
+    return r, activation_maps, object_map
+
+
+def idx_to_label(idx: int) -> str:
+    global metadata
+    if metadata is None:
+        metadata = {}
+        classes = torch.load('data/classes.bin')
+        meta = torch.load('data/meta.bin')[0]
+        metadata['classes'] = classes
+        metadata['labels'] = {}
+        for cls in classes:
+            metadata['labels'][cls] = meta[cls][0]
+    return metadata['labels'][metadata['classes'][idx]]
+
+
+def wnid_to_idx(wnid: str) -> int:
+    global metadata
+    return metadata[1].index(wnid)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate Class Activation Map for images')
@@ -22,87 +88,82 @@ if __name__ == '__main__':
                         help="path to initial weights")
     parser.add_argument('-k', '--topk', type=int, metavar='TOP_K', default=1,
                         help="produce TOP_K number of heat-maps")
-    parser.add_argument('-m', '--mode', type=str, metavar='MODE',
-                        choices=['heatmap', 'classmap'], default='heatmap',
-                        help="mode of operation, whether to generate heatmap or class map")
+    parser.add_argument('--font', type=str, default=os.path.expanduser("~/Library/Fonts/OpenSans-Bold.ttf"),
+                        help="font for rendering text")
+    parser.add_argument('--activation', action='store_true',
+                        help="produce activation map")
+    parser.add_argument('--detection', action='store_true',
+                        help="produce object detection map")
 
     args = parser.parse_args()
 
-    model: MobileNetV2 = produce_model()
-    model.load_state_dict(torch.load(args.initial_weight))
+    setup_model(args.initial_weight)
 
-    model = model.eval()
-
-    # In my model(s) the feature extractor outputs CAMs directly without any extra steps
-    feature_extractor = model.features
-
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    transform_image = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224)
     ])
+
     # initialize data
     image = PIL.Image.open(args.input)
-    tensor: torch.Tensor = transform(image).unsqueeze(0)
+    image: PIL.Image.Image = transform_image(image)
 
-    with torch.no_grad():
-        output = model(tensor)
-        _, pred_list = output.topk(args.topk, 1)
-        features = feature_extractor(tensor)[0]
-        softmax_map, cat_map = F.softmax(features, dim=0).max(dim=0)
-    pred_list = list(pred_list[0].numpy())
+    pred_list, activation_maps, object_map = classify_image(image, topk=args.topk, feature_threshold=0.333)
 
-    # setup colors
-    colormap: Callable = plt.cm.hot
-    color_list = np.asarray(plt.cm.Set3.colors)
-    color_list = np.concatenate((color_list, np.ones((12, 1))), axis=1)
-    # set alpha channel
-    color_list[:, 3] = 0.5
+    output_name = os.path.basename(args.output)
+    os.makedirs(args.output, exist_ok=True)
 
-    # threshold the object detection map to remove uncertain objects/noise
-    threshold_map = softmax_map < 0.33
-    cat_map[threshold_map] = -1
-    # rgb_map
-    size = cat_map.numpy().shape
-    size = (*size, 4)
-    rgb_overlay = np.zeros(size)
-    # render detection map
-    for color_idx, cat_idx in enumerate(cat_map.unique()):
-        if cat_idx == -1:
-            continue
-        rgb_overlay[cat_map == cat_idx] = color_list[color_idx]
+    image.save(os.path.join(args.output, 'orig.png'))
 
-    # produce image
-    # TODO: use matplotlib to generate images with legend/labels
-    rgb_overlay = np.uint8(np.clip(rgb_overlay * 255, 0, 255))
-    rgb_overlay_img = PIL.Image.fromarray(rgb_overlay)
-    rgb_overlay_img = rgb_overlay_img.resize(image.size, resample=PIL.Image.NEAREST)
+    if args.activation:
+        colormap: Callable = plt.cm.gnuplot2
+        for pred, activation_map in zip(pred_list, activation_maps):
+            pred_idx, confidence = pred
+            # produce activation map
+            activation_map = (activation_map - activation_map.min()) / activation_map.max()
+            activation_map = colormap(activation_map)
+            activation_map[:, :, 3] = 0.75  # alpha channel
+            activation_map *= 255
+            activation_map = np.uint8(activation_map.clip(0, 255))
+            activation_map_image = PIL.Image.fromarray(activation_map).resize(image.size, resample=PIL.Image.BILINEAR)
+            # obtain the image with activation map overlay
+            final_image = PIL.Image.alpha_composite(image.convert('RGBA'), activation_map_image)
+            # produce text label
+            label = idx_to_label(pred_idx)
+            draw = PIL.ImageDraw2.Draw(final_image)
+            color = 'white'
+            font = PIL.ImageDraw2.Font(color, args.font, size=14)
+            draw.text((5, 5), f"{label} {confidence:.4f}", font)
 
-    if args.mode == 'heatmap':
-        for pred in pred_list:
-            heatmap: np.ndarray = features[pred].numpy()
+            final_image.save(os.path.join(args.output, f'cam_{pred_idx}.png'))
 
-            heatmap = (heatmap - heatmap.min()) / heatmap.max()
+    if args.detection:
+        color_list = np.asarray(plt.cm.Set3.colors)
+        color_list = np.concatenate((color_list, np.ones((12, 1))), axis=1)
+        # set alpha channel
+        color_list[:, 3] = 0.75
+        size = object_map.shape
+        size = (*size, 4)
+        rgb_overlay = np.zeros(size)
+        # render detection map
+        for color_idx, cat_idx in enumerate(object_map.unique()):
+            if cat_idx == -1:
+                continue
+            # will simply crash when more object types are present
+            rgb_overlay[object_map == cat_idx] = color_list[color_idx]
+        # produce image
+        # TODO: use matplotlib to generate images with legend/labels
+        rgb_overlay = np.uint8(np.clip(rgb_overlay * 255, 0, 255))
+        rgb_overlay_img = PIL.Image.fromarray(rgb_overlay)
+        rgb_overlay_img = rgb_overlay_img.resize(image.size, resample=PIL.Image.BILINEAR)
 
-            heatmap = np.uint8((colormap(heatmap) * 255).clip(0, 255))
-            heatmap_img = PIL.Image.fromarray(heatmap)
-            heatmap_img = heatmap_img.resize(image.size, resample=PIL.Image.LINEAR)
-            r, g, b, _ = heatmap_img.split()
-            a = PIL.Image.new('L', heatmap_img.size, 127)
-            heatmap_img = PIL.Image.merge('RGBA', (r, g, b, a))
+    # if args.mode == 'heatmap':
 
-            final_image = PIL.Image.alpha_composite(image.convert('RGBA'), heatmap_img)
-
-            filename = os.path.basename(args.input)
-            filename = filename.split('.')[0]
-            filename = f"{filename}_pred_{pred.item()}.png"
-            output_path = os.path.join(args.output, filename)
-            final_image.save(output_path)
-    elif args.mode == 'classmap':
-        filename = os.path.basename(args.input)
-        filename = filename.split('.')[0]
-        filename = f"{filename}_classmap.png"
-        final_image = PIL.Image.alpha_composite(image.convert('RGBA'), rgb_overlay_img)
-        final_image.save(os.path.join(args.output, filename))
-    else:
-        exit(-1)
+    # elif args.mode == 'classmap':
+    #     filename = os.path.basename(args.input)
+    #     filename = filename.split('.')[0]
+    #     filename = f"{filename}_classmap.png"
+    #     final_image = PIL.Image.alpha_composite(image.convert('RGBA'), rgb_overlay_img)
+    #     final_image.save(os.path.join(args.output, filename))
+    # else:
+    #     exit(-1)
