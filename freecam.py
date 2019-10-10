@@ -133,7 +133,7 @@ if __name__ == '__main__':
         colormap: Callable = plt.cm.gnuplot2
         if args.normalize_per_category:
             for i, activation_map in enumerate(activation_maps):
-                activation_map = (activation_map - activation_map.min) / activation_map.max()
+                activation_map = (activation_map - activation_map.min()) / activation_map.max()
                 activation_maps[i] = activation_map
         else:
             # unitize using same min/max
