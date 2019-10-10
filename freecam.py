@@ -1,7 +1,7 @@
 import argparse
 import io
 import os
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Optional
 
 import PIL.Image
 import PIL.ImageDraw2
@@ -30,7 +30,8 @@ def setup_model(initial_weight: str) -> None:
 
 def classify_image(img: PIL.Image.Image,
                    topk: int = 1,
-                   feature_threshold: float = 0.33) -> Tuple[List[Tuple[int, float]], List[np.ndarray], np.ndarray]:
+                   feature_threshold: float = 0.33,
+                   pred_list: Optional[List[int]] = None) -> Tuple[List[Tuple[int, float]], List[np.ndarray], np.ndarray]:
     global model
     transform_tensor = transforms.Compose([
         transforms.ToTensor(),
@@ -42,11 +43,12 @@ def classify_image(img: PIL.Image.Image,
         features = model(x)[0]
         output = F.adaptive_avg_pool2d(features, (1, 1)).view(-1)
         act = F.softmax(output, dim=0)
-        _, pred_list = output.topk(topk)
+        if pred_list is None:
+            _, pred_list = output.topk(topk)
+            pred_list = list(pred_list.numpy())
         softmax_map, object_map = F.softmax(features, dim=0).max(dim=0)
 
     # prepare image classification results and respective activation map
-    pred_list = list(pred_list.numpy())
     r = []
     activation_maps = []
     for pred in pred_list:
@@ -100,6 +102,8 @@ if __name__ == '__main__':
                         help="do not output softmax value")
     parser.add_argument('--normalize-per-category', action='store_true',
                         help="self explanatory")
+    parser.add_argument('-c', '--categories', type=int, nargs='+', metavar='CATEGORY_INDICES', required=False,
+                        help="indices of categories to render")
 
     args = parser.parse_args()
 
@@ -114,8 +118,12 @@ if __name__ == '__main__':
     image = PIL.Image.open(args.input)
     image: PIL.Image.Image = transform_image(image)
 
-    pred_list, activation_maps, object_map = classify_image(image, topk=args.topk, feature_threshold=args.threshold)
-
+    if args.categories is None:
+        pred_list, activation_maps, object_map = classify_image(image, topk=args.topk, feature_threshold=args.threshold)
+    else:
+        pred_list, activation_maps, object_map = classify_image(image,
+                                                                feature_threshold=args.threshold,
+                                                                pred_list=args.categories)
     output_name = os.path.basename(args.output)
     os.makedirs(args.output, exist_ok=True)
 
