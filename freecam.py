@@ -54,7 +54,7 @@ def classify_image(img: PIL.Image.Image,
         activation_maps.append(features[pred].numpy())
 
     # prepare object detection
-    threshold_map = softmax_map < 0.33
+    threshold_map = softmax_map < feature_threshold
     object_map[threshold_map] = -1
     object_map = object_map.numpy()
     return r, activation_maps, object_map
