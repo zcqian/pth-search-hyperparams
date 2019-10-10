@@ -21,10 +21,7 @@ metadata = None
 def setup_model(initial_weight: str) -> None:
     global model
     if model is None:
-        model = produce_model()
-        model.load_state_dict(torch.load(initial_weight))
-        model.eval()
-        model = model.features
+        model = produce_model(initial_weight)
     return
 
 
