@@ -98,6 +98,8 @@ if __name__ == '__main__':
                         help="produce object detection map")
     parser.add_argument('--no-softmax', action='store_true',
                         help="do not output softmax value")
+    parser.add_argument('--normalize-per-category', action='store_true',
+                        help="self explanatory")
 
     args = parser.parse_args()
 
@@ -121,9 +123,14 @@ if __name__ == '__main__':
 
     if args.activation:
         colormap: Callable = plt.cm.gnuplot2
-        # unitize using same min/max
-        activation_maps = np.asarray(activation_maps)
-        activation_maps = (activation_maps - activation_maps.min()) / activation_maps.max()
+        if args.normalize_per_category:
+            for i, activation_map in enumerate(activation_maps):
+                activation_map = (activation_map - activation_map.min) / activation_map.max()
+                activation_maps[i] = activation_map
+        else:
+            # unitize using same min/max
+            activation_maps = np.asarray(activation_maps)
+            activation_maps = (activation_maps - activation_maps.min()) / activation_maps.max()
         for pred, activation_map in zip(pred_list, activation_maps):
             pred_idx, confidence = pred
             # produce activation map
