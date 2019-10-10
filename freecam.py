@@ -1,4 +1,5 @@
 import argparse
+import io
 import os
 from typing import Callable, List, Tuple
 
@@ -9,10 +10,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
-from torchvision.models import MobileNetV2
+from matplotlib.patches import Patch
 
 from model import produce_model
-
 
 model = None
 metadata = None
@@ -88,6 +88,8 @@ if __name__ == '__main__':
                         help="path to initial weights")
     parser.add_argument('-k', '--topk', type=int, metavar='TOP_K', default=1,
                         help="produce TOP_K number of heat-maps")
+    parser.add_argument('-t', '--threshold', type=float, default=0.33, metavar='DET_THRESHOLD',
+                        help="threshold for object detection")
     parser.add_argument('--font', type=str, default=os.path.expanduser("~/Library/Fonts/OpenSans-Bold.ttf"),
                         help="font for rendering text")
     parser.add_argument('--activation', action='store_true',
@@ -108,7 +110,7 @@ if __name__ == '__main__':
     image = PIL.Image.open(args.input)
     image: PIL.Image.Image = transform_image(image)
 
-    pred_list, activation_maps, object_map = classify_image(image, topk=args.topk, feature_threshold=0.333)
+    pred_list, activation_maps, object_map = classify_image(image, topk=args.topk, feature_threshold=args.threshold)
 
     output_name = os.path.basename(args.output)
     os.makedirs(args.output, exist_ok=True)
@@ -127,15 +129,15 @@ if __name__ == '__main__':
             activation_map = np.uint8(activation_map.clip(0, 255))
             activation_map_image = PIL.Image.fromarray(activation_map).resize(image.size, resample=PIL.Image.BILINEAR)
             # obtain the image with activation map overlay
-            final_image = PIL.Image.alpha_composite(image.convert('RGBA'), activation_map_image)
+            final_cam_image = PIL.Image.alpha_composite(image.convert('RGBA'), activation_map_image)
             # produce text label
             label = idx_to_label(pred_idx)
-            draw = PIL.ImageDraw2.Draw(final_image)
+            draw = PIL.ImageDraw2.Draw(final_cam_image)
             color = 'white'
             font = PIL.ImageDraw2.Font(color, args.font, size=14)
             draw.text((5, 5), f"{label} {confidence:.4f}", font)
 
-            final_image.save(os.path.join(args.output, f'cam_{pred_idx}.png'))
+            final_cam_image.save(os.path.join(args.output, f'cam_{pred_idx}.png'))
 
     if args.detection:
         color_list = np.asarray(plt.cm.Set3.colors)
@@ -146,24 +148,28 @@ if __name__ == '__main__':
         size = (*size, 4)
         rgb_overlay = np.zeros(size)
         # render detection map
-        for color_idx, cat_idx in enumerate(object_map.unique()):
+        labels = []
+        for color_idx, cat_idx in enumerate(np.unique(object_map)):
             if cat_idx == -1:
                 continue
             # will simply crash when more object types are present
             rgb_overlay[object_map == cat_idx] = color_list[color_idx]
+            labels.append((color_list[color_idx], idx_to_label(cat_idx)))
         # produce image
         # TODO: use matplotlib to generate images with legend/labels
         rgb_overlay = np.uint8(np.clip(rgb_overlay * 255, 0, 255))
         rgb_overlay_img = PIL.Image.fromarray(rgb_overlay)
         rgb_overlay_img = rgb_overlay_img.resize(image.size, resample=PIL.Image.BILINEAR)
 
-    # if args.mode == 'heatmap':
-
-    # elif args.mode == 'classmap':
-    #     filename = os.path.basename(args.input)
-    #     filename = filename.split('.')[0]
-    #     filename = f"{filename}_classmap.png"
-    #     final_image = PIL.Image.alpha_composite(image.convert('RGBA'), rgb_overlay_img)
-    #     final_image.save(os.path.join(args.output, filename))
-    # else:
-    #     exit(-1)
+        final_detection_map = PIL.Image.alpha_composite(image.convert('RGBA'), rgb_overlay_img)
+        final_detection_map.save(os.path.join(args.output, f"det_thr_{args.threshold:.2f}.png"))
+        # eh? https://stackoverflow.com/questions/4534480
+        patches = [
+            Patch(color=color, label=label) for (color, label) in labels
+        ]
+        fig = plt.figure(figsize=(4, 3), dpi=600)
+        fig.legend(patches, [label for (_, label) in labels], loc='center', frameon=False)
+        buf = io.BytesIO()
+        plt.savefig(buf, bbox_inches='tight')
+        legend = PIL.Image.open(buf)
+        legend.save(os.path.join(args.output, f"det_legend_thr_{args.threshold:.2f}.png"))
