@@ -96,6 +96,8 @@ if __name__ == '__main__':
                         help="produce activation map")
     parser.add_argument('--detection', action='store_true',
                         help="produce object detection map")
+    parser.add_argument('--no-softmax', action='store_true',
+                        help="do not output softmax value")
 
     args = parser.parse_args()
 
@@ -137,7 +139,11 @@ if __name__ == '__main__':
             draw = PIL.ImageDraw2.Draw(final_cam_image)
             color = 'white'
             font = PIL.ImageDraw2.Font(color, args.font, size=14)
-            draw.text((5, 5), f"{label} {confidence:.4f}", font)
+            if args.no_softmax:
+                text = f"{label}"
+            else:
+                text = f"{label} {confidence:.4f}"
+            draw.text((5, 5), text, font)
 
             final_cam_image.save(os.path.join(args.output, f'cam_{pred_idx}.png'))
 
