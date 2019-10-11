@@ -97,6 +97,9 @@ if __name__ == '__main__':
                         help="produce object detection map")
     parser.add_argument('--no-softmax', action='store_true',
                         help="do not output softmax value")
+    parser.add_argument('--no-label', action='store_true',
+                        help="do not output object label")
+    parser.add_argument('--full-resolution', action='store_true')
     parser.add_argument('--normalize-per-category', action='store_true',
                         help="self explanatory")
     parser.add_argument('-c', '--categories', type=int, nargs='+', metavar='CATEGORY_INDICES', required=False,
@@ -113,7 +116,10 @@ if __name__ == '__main__':
 
     # initialize data
     image = PIL.Image.open(args.input)
-    image: PIL.Image.Image = transform_image(image)
+    if args.full_resolution:
+        pass
+    else:
+        image: PIL.Image.Image = transform_image(image)
 
     if args.categories is None:
         pred_list, activation_maps, object_map = classify_image(image, topk=args.topk, feature_threshold=args.threshold)
@@ -151,10 +157,15 @@ if __name__ == '__main__':
             draw = PIL.ImageDraw2.Draw(final_cam_image)
             color = 'white'
             font = PIL.ImageDraw2.Font(color, args.font, size=14)
-            if args.no_softmax:
-                text = f"{label}"
+            text = ""
+            if args.no_label:
+                pass
             else:
-                text = f"{label} {confidence:.4f}"
+                text += f"{label}"
+            if args.no_softmax:
+                pass
+            else:
+                text += f" {confidence:.4f}"
             draw.text((5, 5), text, font)
 
             final_cam_image.save(os.path.join(args.output, f'cam_{pred_idx}.png'))
