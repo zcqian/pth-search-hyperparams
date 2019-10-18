@@ -19,7 +19,7 @@ class LambdaLayer(nn.Module):
         # this is because I want to see whatever the anonymous function is
         # but I do not know how to parse python syntax or want to learn to write a parser now
         self.src = inspect.getsourcelines(self.lm)
-        if len(self.src[0]) == 1 and self.src[1] == 1:
+        if len(self.src[0]) == 1:
             module_code_str: str = self.src[0][0]
             lam_start_pos = module_code_str.find("lambda")
             # the case where def f(x): ... is a one liner
