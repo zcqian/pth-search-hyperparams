@@ -16,6 +16,7 @@ class LambdaLayer(nn.Module):
         """
         super().__init__()
         self.lm = lm
+        # TODO: This is still broken. How is stripping all ')' correct?
         # this is because I want to see whatever the anonymous function is
         # but I do not know how to parse python syntax or want to learn to write a parser now
         self.src = inspect.getsourcelines(self.lm)
